@@ -50,7 +50,7 @@ else:
     logger.critical('*** No access key (PSW) was provided. Please get one from TTN Console.')
     exit(1)
 
-timeout = os.environ.get('TIMEOUT',30)
+timeout = os.environ.get('TIMEOUT',240)
 logger.info('*** Devices will get deleted, if they did not not send messages for %d seconds. ' % timeout)
 
 labels = [
