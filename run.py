@@ -11,6 +11,10 @@ from pprint import pprint
 import os
 import logging
 import sys
+from datetime import datetime, timezone
+from dateutil import tz, parser
+
+
 
 formatter = logging.Formatter('%(asctime)-15s %(name)-12s: %(levelname)-8s %(message)s')
 
@@ -46,6 +50,9 @@ else:
     logger.critical('*** No access key (PSW) was provided. Please get one from TTN Console.')
     exit(1)
 
+timeout = os.environ.get('TIMEOUT',30)
+logger.info('*** Devices will get deleted, if they did not not send messages for %d seconds. ' % timeout)
+
 labels = [
     'appid',
     'device'
@@ -57,6 +64,8 @@ data = {
     }
 
 rssi = {}
+
+device_last_ts = {}
 
 #Call back functions
 
@@ -76,10 +85,17 @@ def on_message(mqttc,obj,msg):
         counter = x["counter"]
         payload_raw = x["payload_raw"]
         payload_fields = x["payload_fields"]
-        datetime = x["metadata"]["time"]
+        dt2 = x["metadata"]["time"]
         gateways = x["metadata"]["gateways"]
 
         gw_id = gateways[0]['gtw_id']
+
+        if device not in device_last_ts.keys():
+            device_last_ts[device] = dt2
+        else:
+            device_last_ts[device] = dt2
+
+        pprint(device_last_ts)
 
         # process payload fields
         for field_key in payload_fields.keys():
@@ -106,14 +122,14 @@ def on_message(mqttc,obj,msg):
             data[field_key][device] = values
 
             
-            #pprint(rssi)
+
 
         
         # print for every gateway that has received the message and extract RSSI
         for gw in gateways:
             gateway_id = gw["gtw_id"]
             rssi2 = gw["rssi"]
-            logger.debug(datetime + ", " + device + ", " + str(counter) + ", "+ gateway_id + ", "+ str(rssi2) + ", " + str(payload_fields))
+            #logger.debug(datetime + ", " + device + ", " + str(counter) + ", "+ gateway_id + ", "+ str(rssi2) + ", " + str(payload_fields))
     except Exception as e:
         print(e)
         pass
@@ -131,6 +147,31 @@ def on_log(mqttc,obj,level,buf):
 
 class CustomCollector(object):
     def collect(self):
+
+        removed_devices = []
+
+        for device in device_last_ts:
+            t1 = parser.parse(device_last_ts[device])
+            diff = (datetime.now(timezone.utc)-t1)
+            pprint('%s: last seen %d seconds ago' % (device,diff.total_seconds()))
+
+            if diff.total_seconds() > timeout:
+                logger.info('*** Deleting device %s since no new messages since %d seconds from it.(Threshold: %d sceonds)' % (device, diff.total_seconds(), timeout ))
+
+                for field_key in data.keys():
+                    data[field_key].pop(device, None)
+
+                rssi.pop(device, None)
+
+                removed_devices.append(device)
+
+
+                logger.info('*** Device %s deleted.' % device)
+
+        for device in removed_devices:
+            device_last_ts.pop(device,None)
+
+
         for field_key in data.keys():
             c = GaugeMetricFamily('ttn_%s_%s' % (APPID, field_key), 'Help text', labels=labels)
             for device in data[field_key].keys():
