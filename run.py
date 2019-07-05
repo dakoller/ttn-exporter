@@ -95,7 +95,7 @@ def on_message(mqttc,obj,msg):
         else:
             device_last_ts[device] = dt2
 
-        pprint(device_last_ts)
+        #pprint(device_last_ts)
 
         # process payload fields
         for field_key in payload_fields.keys():
